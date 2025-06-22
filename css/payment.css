@@ -1,0 +1,396 @@
+@import url("https://fonts.googleapis.com/css2?family=Raleway:ital,wght@0,100..900;1,100..900&display=swap");
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: "Raleway", sans-serif;
+}
+
+h1 {
+  font-size: 50px;
+  line-height: 64px;
+  color: #222;
+}
+
+h2 {
+  font-size: 46px;
+  line-height: 64px;
+  color: #222;
+}
+
+h4 {
+  font-size: 30px;
+  color: #222;
+}
+
+h6 {
+  font-weight: 700;
+  font-size: 12px;
+}
+
+p {
+  font-size: 12px;
+  color: #465b52;
+}
+
+.section-p1 {
+  padding: 40px 80px;
+}
+
+.section-m1 {
+  margin: 40px 0;
+}
+
+button.normal {
+  font-size: 14px;
+  font-weight: 600;
+  padding: 15px 30px;
+  color: #000;
+  background-color: #fff;
+  border-radius: 4px;
+  cursor: pointer;
+  border: none;
+  outline: none;
+  transition: 0.2s;
+}
+
+button.white {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 11px 18px;
+  color: #fff;
+  background-color: transparent;
+  cursor: pointer;
+  border: 1px solid #fff;
+  outline: none;
+  transition: 0.2s;
+}
+
+body {
+  width: 100%;
+}
+
+/*Header*/
+.slogan {
+  flex: 1;
+  text-align: center;
+  font-size: 20px;
+  font-weight: 600;
+  color: #c35d1d;
+  padding: 0 20px;
+}
+
+#header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 80px;
+  background: #ffe0b1;
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.06);
+  z-index: 999;
+  position: sticky;
+  top: 0;
+  left: 0;
+}
+
+#header > div:last-child {
+  flex-shrink: 0;
+}
+
+.logo {
+  width: 70px;
+  height: 70px;
+  border-radius: 16px;
+  border: 2px solid #ff5d13;
+}
+
+#navbar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#navbar li {
+  list-style: none;
+  padding: 0 20px;
+  position: relative;
+}
+
+#navbar li a {
+  text-decoration: none;
+  font-size: 16px;
+  font-weight: 600;
+  font-family: "Raleway", sans-serif; /* hoặc font đang dùng */
+  color: #1a1a1a;
+  transition: 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+#navbar li a i {
+  color: inherit; /* Cho icon kế thừa màu từ thẻ a */
+  transition: 0.3s ease;
+}
+
+#navbar li a:hover,
+#navbar li a.active {
+  color: #ff5d13;
+}
+
+#navbar li a.active::after,
+#navbar li a:hover::after {
+  content: "";
+  width: 30%;
+  background: #ff5d13;
+  height: 2px;
+  position: absolute;
+  bottom: -4px;
+  left: 20px;
+}
+
+/*Đổi màu user name*/
+#navbar a {
+  color: #000; /* mặc định màu đen */
+  text-decoration: none;
+}
+
+#navbar a.active,
+#navbar a:hover {
+  color: #f26522; /* màu cam nổi bật */
+}
+
+#navbar a:visited {
+  color: #000; /* ngăn visited chuyển tím */
+}
+
+#navbar .user-name {
+  color: #f26522;
+  font-weight: 600;
+  font-weight: bold;
+  text-decoration: none;
+}
+
+/* Footer */
+footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  border: 1px solid #000;
+  border-radius: 16px;
+  padding: 20px;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  margin-top: 40px;
+}
+
+footer .col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin-bottom: 20px;
+}
+
+footer .col p {
+  display: flex;
+  align-items: flex-start;
+  margin: 0 0 8px 0;
+  width: 100%;
+}
+
+footer .logo {
+  margin-bottom: 30px;
+}
+
+footer h4 {
+  font-size: 20px;
+  padding-top: 30px;
+  padding-bottom: 10px;
+}
+
+footer a {
+  font-size: 15px;
+  text-decoration: none;
+  color: #222;
+  margin-bottom: 10px;
+}
+
+footer .follow {
+  margin-top: 20px;
+}
+
+footer .follow i {
+  color: #465b52;
+  padding-right: 4px;
+  cursor: pointer;
+}
+
+footer .install .row img {
+  border-radius: 6px;
+  border: 1px solid #000;
+}
+
+footer .install img {
+  margin: 10px 0 15px 0;
+}
+
+footer .install .pay {
+  display: flex;
+  gap: 20px;
+  justify-content: flex-start;
+}
+
+footer .install .pay img {
+  width: 50px;
+  height: auto;
+  border-radius: 6px;
+  border: 1px solid #000;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+
+footer .follow i:hover,
+footer a:hover {
+  color: #ff5d13;
+}
+
+/* Payment Section */
+.checkout-container {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 40px;
+  margin-top: 30px;
+}
+
+/* Khối giỏ hàng */
+.cart-section {
+  flex: 1;
+  min-width: 400px;
+  max-width: 49%;
+  background: #fff;
+  padding: 20px;
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* Khối thanh toán */
+.payment-section {
+  flex: 1;
+  min-width: 400px;
+  max-width: 49%;
+  background: #fff;
+  padding: 20px;
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.cart-section table {
+  width: 100%;
+  table-layout: fixed;
+  word-wrap: break-word;
+}
+
+.cart-section td {
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.payment-section form {
+  display: flex;
+  flex-direction: column;
+}
+
+.payment-section form input,
+.payment-section form select,
+.payment-section form textarea {
+  margin-bottom: 10px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 20px;
+}
+
+table thead tr {
+  background: #f5f5f5;
+}
+
+table thead td {
+  font-weight: 600;
+  padding: 10px;
+  font-size: 16px;
+}
+
+table tbody tr {
+  border-bottom: 1px solid #ddd;
+}
+
+table tbody td {
+  padding: 10px;
+  font-size: 17px;
+}
+
+table tbody td img {
+  width: 80px;
+  height: auto;
+  border-radius: 8px;
+}
+
+.price {
+  color: #e75b1e;
+  font-weight: bold;
+  font-size: 18px;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  margin-bottom: 10px;
+  padding: 10px;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  font-size: 15px;
+}
+
+form div {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 15px;
+}
+
+form label {
+  display: flex;
+  align-items: center;
+  font-size: 16px;
+}
+
+form input[type="radio"] {
+  width: auto;
+  margin-right: 10px;
+}
+
+button {
+  background-color: #ff5d13;
+  color: white;
+  padding: 12px 20px;
+  font-size: 16px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+button:hover {
+  background-color: #e04c0f;
+}
+
+.error-message {
+  background: #f8d7da;
+  color: #721c24;
+  padding: 10px;
+  margin: 10px 0;
+  border-radius: 5px;
+  border: 1px solid #f5c6cb;
+}

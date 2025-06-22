@@ -1,0 +1,86 @@
+body {
+  margin: 0;
+  padding: 0;
+  font-family: "Segoe UI", sans-serif;
+  background-image: url("../image/h1.jpg");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
+
+.profile-wrapper {
+  display: flex;
+  justify-content: center;
+  padding: 40px 20px;
+}
+
+.profile-card {
+  width: 100%;
+  max-width: 900px;
+  background: #fff;
+  padding: 40px;
+  border-radius: 12px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+  position: relative;
+}
+
+.logout-btn {
+  position: absolute;
+  top: 20px;
+  right: 30px;
+  color: red;
+  text-decoration: none;
+  font-weight: bold;
+}
+
+.section {
+  margin-top: 30px;
+}
+
+.section h3 {
+  color: #f26522;
+  margin-bottom: 10px;
+  font-size: 20px;
+}
+
+.info-item {
+  margin: 8px 0;
+  font-size: 16px;
+}
+
+.order-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 20px;
+}
+
+.order-table th,
+.order-table td {
+  padding: 12px;
+  border-bottom: 1px solid #eee;
+  text-align: center;
+}
+
+.order-table thead {
+  background: #f26522;
+  color: white;
+}
+
+.no-order {
+  color: gray;
+  font-style: italic;
+  margin-top: 10px;
+}
+
+.back-btn {
+  display: inline-block;
+  font-size: 16px; /* Cùng cỡ chữ với nút Đăng xuất */
+  color: #f44336; /* Màu giống nút Đăng xuất */
+  text-decoration: none; /* Loại bỏ gạch chân */
+  font-weight: bold; /* Đảm bảo chữ đậm giống nút Đăng xuất */
+}
+
+.back-btn:hover {
+  color: #ff1a1a; /* Màu khi hover (tùy chỉnh nếu cần) */
+}

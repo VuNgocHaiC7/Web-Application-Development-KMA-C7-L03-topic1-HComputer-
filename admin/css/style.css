@@ -1,0 +1,136 @@
+body {
+  background-color: #fadbc2 !important;
+  color: #212529 !important;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  margin: 0;
+}
+
+/* ---------- SIDEBAR TRÁI ---------- */
+aside.bg-sidebar {
+  background-color: #ffe6c6 !important;
+  color: #212529;
+  border-right: 1px solid #000000;
+  min-height: 100vh;
+  padding-top: 20px;
+}
+
+.nav-link {
+  color: #212529 !important;
+  padding: 10px 15px;
+  font-weight: 500;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.logo {
+  border-radius: 16px;
+  border: 1px solid #ff5b03;
+}
+
+.nav-link:hover {
+  background-color: #e9ecef;
+  color: #000 !important;
+}
+
+.nav-link.active {
+  background-color: #0d6efd;
+  color: #fff !important;
+  font-weight: bold;
+}
+
+.table {
+  background-color: #ffffff;
+  color: #212529;
+  border-collapse: collapse;
+  width: 100%;
+  margin-top: 1rem;
+}
+
+.table th,
+.table td {
+  padding: 0.75rem;
+  border: 1px solid #dee2e6;
+  vertical-align: top;
+}
+
+.table thead {
+  background-color: #fd8d0d;
+  color: #fff;
+}
+
+.table-dark {
+  background-color: #ffffff;
+  color: #212529;
+}
+
+.table-dark th,
+.table-dark td {
+  background-color: #ffffff;
+  color: #212529;
+  border-color: #dee2e6;
+}
+
+.btn-dark {
+  background-color: #fd8d0d;
+  border: none;
+  color: #fff;
+}
+
+.btn-dark:hover {
+  background-color: #d76e0b;
+}
+
+.form-control,
+.form-select {
+  background-color: #ffffff;
+  color: #212529;
+  border: 1px solid #ced4da;
+}
+
+.form-control:focus,
+.form-select:focus {
+  border-color: #86b7fe;
+  box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
+  outline: none;
+}
+
+.modal-content {
+  background-color: #ffffff;
+  color: #212529;
+}
+
+small {
+  font-size: 90%;
+  color: #6c757d;
+}
+
+.btn-add {
+  background-color: #fd7e14;
+  color: #fff;
+  font-weight: 500;
+  border: none;
+  padding: 6px 14px;
+  border-radius: 6px;
+  transition: 0.2s ease;
+}
+
+.btn-add:hover {
+  background-color: #e5670c;
+  color: #fff;
+}
+
+.modal-content {
+  background-color: #f5bb81 !important;
+  color: #212529 !important;
+}
+
+.modal-header {
+  border-bottom: 1px solid #dee2e6;
+}
+
+.modal-footer {
+  border-top: 1px solid #dee2e6;
+  background-color: #f4d3b2;
+}
