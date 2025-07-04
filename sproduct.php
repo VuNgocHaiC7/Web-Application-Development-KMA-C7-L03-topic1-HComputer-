@@ -41,10 +41,19 @@ $stmt->execute();
 $gallery = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
 // Lấy sản phẩm gợi ý
+$suggestions = [];
 $stmt = $conn->prepare("SELECT * FROM products WHERE type = ? AND id != ? ORDER BY RAND() LIMIT 4");
 $stmt->bind_param("si", $product['type'], $product_id);
 $stmt->execute();
 $suggestions = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+if (empty($suggestions)) {
+  // Nếu không có sản phẩm cùng type, lấy ngẫu nhiên từ tất cả sản phẩm khác
+  $stmt = $conn->prepare("SELECT * FROM products WHERE id != ? ORDER BY RAND() LIMIT 4");
+  $stmt->bind_param("i", $product_id);
+  $stmt->execute();
+  $suggestions = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+}
 
 // Xử lý thêm sản phẩm vào giỏ hàng khi form được gửi
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_to_cart'])) {
@@ -195,18 +204,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_to_cart'])) {
         <h4>Thông tin chi tiết sản phẩm</h4>
         <div class="detail">
           <?php if (!empty($descriptions)): ?>
-            <?php foreach ($descriptions as $desc): ?>
-              <p><?php
-                  $line = $desc['description'];
-                  if (strpos($line, ':') !== false) {
-                    [$label, $value] = explode(':', $line, 2);
-                    echo "<p><strong>" . htmlspecialchars(trim($label)) . ":</strong>" . htmlspecialchars($value) . "</p>";
-                  } else {
-                    echo "<p>" . htmlspecialchars($line) . "</p>";
-                  }
-                  ?>
-              </p>
-            <?php endforeach; ?>
+            <?php
+            // Kết hợp tất cả mô tả thành một chuỗi duy nhất
+            $fullDescription = implode(' ', array_column($descriptions, 'description'));
+            // Tách thành các câu dựa trên dấu ;
+            $sentences = array_map('trim', explode(';', $fullDescription));
+
+            foreach ($sentences as $sentence) {
+              $sentence = trim($sentence);
+              if (!empty($sentence)) {
+                if (strpos($sentence, ':') !== false) {
+                  // Tách tiêu đề và giá trị dựa trên dấu :
+                  [$label, $value] = array_map('trim', explode(':', $sentence, 2));
+                  echo "<p><strong>{$label}:</strong> {$value}</p>";
+                } else {
+                  // Nếu không có dấu :, hiển thị nguyên câu
+                  echo "<p>{$sentence}</p>";
+                }
+              }
+            }
+            ?>
           <?php else: ?>
             <p><em>Đang cập nhật...</em></p>
           <?php endif; ?>

@@ -1,252 +1,355 @@
 <?php
 session_start();
-require_once "../includes/config.php";
+require_once __DIR__ . '/../includes/config.php';
 
 // Kiểm tra quyền admin
-if (!isset($_SESSION['admin'])) {
+if (empty($_SESSION['admin'])) {
   $_SESSION['error_message'] = "Bạn cần đăng nhập với tài khoản admin để truy cập.";
   header('Location: ../login.php');
   exit();
 }
 
-// Xử lý tìm kiếm
-$search_term = $_GET['search'] ?? '';
-$search_type = $_GET['search_type'] ?? 'code';
-$where = "WHERE p.main_img IS NOT NULL AND p.main_img != ''";
+// --- XỬ LÝ TÌM KIẾM ---
+$search_term = trim($_GET['search'] ?? '');
+$search_type = ($_GET['search_type'] ?? 'code') === 'name' ? 'name' : 'code';
+$where = "WHERE p.main_img != ''";
 $params = [];
-$types = "";
+$types = '';
 
-if ($search_term) {
+if ($search_term !== '') {
   if ($search_type === 'code') {
-    $where .= " AND p.id = ?";
-    $params[] = $search_term;
-    $types .= "i";
+    $where   .= " AND p.id = ?";
+    $params[] = (int)$search_term;
+    $types   .= 'i';
   } else {
-    $where .= " AND p.name LIKE ?";
-    $params[] = '%' . $search_term . '%';
-    $types .= "s";
+    $where   .= " AND p.name LIKE ?";
+    $params[] = "%{$search_term}%";
+    $types   .= 's';
   }
 }
 
-// Lấy danh sách sản phẩm chỉ có ảnh chính, gộp mô tả
-$sql = "SELECT p.*, GROUP_CONCAT(pd.description SEPARATOR ', ') AS descriptions 
-        FROM products p 
-        LEFT JOIN product_description pd ON p.id = pd.product_id 
-        $where 
-        GROUP BY p.id";
+$sql = "
+    SELECT
+        p.*, 
+        GROUP_CONCAT(pd.description SEPARATOR ', ') AS descriptions
+    FROM products p
+    LEFT JOIN product_description pd ON p.id = pd.product_id
+    {$where}
+    GROUP BY p.id
+";
 $stmt = $conn->prepare($sql);
-if ($types) {
+if ($types !== '') {
   $stmt->bind_param($types, ...$params);
 }
 $stmt->execute();
 $products = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
-// Xử lý thêm sản phẩm
-$error = '';
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_product'])) {
-  $name = $_POST['addName'];
-  $price = $_POST['addPrice'];
-  $rating = $_POST['addRating'];
-  $rating_count = $_POST['addReviewCount'];
-  $description = $_POST['addSpecs'];
+// Biến lưu lỗi/thành công
+$error   = '';
+$success = '';
 
-  // Xử lý ảnh chính
-  $image_path = '';
-  if (isset($_FILES['addImageFile']) && $_FILES['addImageFile']['error'] === UPLOAD_ERR_OK) {
-    $upload_dir = '../image/product/';
-    $image_name = time() . '_' . basename($_FILES['addImageFile']['name']);
-    $image_path = $upload_dir . $image_name;
-    if (!move_uploaded_file($_FILES['addImageFile']['tmp_name'], $image_path)) {
-      $error = "Tải lên hình ảnh chính thất bại.";
-    }
-    $image_path = 'image/product/' . $image_name; // Lưu đường dẫn tương đối
-  } else {
-    $error = "Vui lòng chọn hình ảnh chính.";
+// Helper: upload file
+function uploadFile(array $file, string $uploadDir, string &$error): string
+{
+  if ($file['error'] !== UPLOAD_ERR_OK) {
+    $error = "Vui lòng chọn file hoặc lỗi upload.";
+    return '';
   }
+  if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
+  $name   = time() . '_' . basename($file['name']);
+  $target = rtrim($uploadDir, '/') . '/' . $name;
+  if (move_uploaded_file($file['tmp_name'], $target)) {
+    return $target;
+  }
+  $error = "Tải lên file {$file['name']} thất bại.";
+  return '';
+}
 
-  // Xử lý ảnh phụ
-  $gallery_paths = [];
-  if (isset($_FILES['addGalleryFiles']) && !$error) {
-    $upload_dir = '../image/product/gallery/';
-    if (!is_dir($upload_dir)) {
-      mkdir($upload_dir, 0777, true); // Tạo thư mục nếu chưa tồn tại
-    }
-    foreach ($_FILES['addGalleryFiles']['name'] as $key => $name) {
-      if ($_FILES['addGalleryFiles']['error'][$key] === UPLOAD_ERR_OK) {
-        $gallery_name = time() . '_' . $key . '_' . basename($name);
-        $gallery_path = $upload_dir . $gallery_name;
-        if (move_uploaded_file($_FILES['addGalleryFiles']['tmp_name'][$key], $gallery_path)) {
-          $gallery_paths[] = 'image/product/gallery/' . $gallery_name; // Lưu đường dẫn tương đối
+// Xử lý thêm sản phẩm
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_product'])) {
+  $name          = trim($_POST['addName'] ?? '');
+  $type          = trim($_POST['addType'] ?? '');
+  $price         = floatval($_POST['addPrice'] ?? 0);
+  $rating        = intval($_POST['addRating'] ?? 0);
+  $rating_count  = intval($_POST['addReviewCount'] ?? 0);
+  $brand         = trim($_POST['addBrand'] ?? '');
+  $descriptions  = trim($_POST['addSpecs'] ?? '');
+
+  // Validate cơ bản
+  if (empty($name) || empty($type) || $price < 0 || $rating < 1 || $rating > 5 || $rating_count < 0) {
+    $error = "Dữ liệu đầu vào không hợp lệ. Vui lòng kiểm tra lại.";
+  } else {
+    // 1) Xử lý ảnh chính
+    $allowed_types = ['image/jpeg', 'image/png', 'image/gif'];
+    $max_size      = 5 * 1024 * 1024;
+    $image_path    = '';
+    if (isset($_FILES['addImageFile']) && $_FILES['addImageFile']['error'] === UPLOAD_ERR_OK) {
+      if (
+        in_array($_FILES['addImageFile']['type'], $allowed_types) &&
+        $_FILES['addImageFile']['size'] <= $max_size
+      ) {
+        $upload_dir  = __DIR__ . '/../image/product/';
+        if (!is_dir($upload_dir)) mkdir($upload_dir, 0777, true);
+        $image_name  = time() . '_' . basename($_FILES['addImageFile']['name']);
+        $full_target = $upload_dir . $image_name;
+        if (move_uploaded_file($_FILES['addImageFile']['tmp_name'], $full_target)) {
+          $image_path = 'image/product/' . $image_name;
         } else {
-          $error = "Tải lên ảnh phụ $name thất bại.";
-          break;
+          $error = "Tải lên hình ảnh chính thất bại.";
+        }
+      } else {
+        $error = "Hình ảnh chính không hợp lệ (JPEG/PNG/GIF, ≤5MB).";
+      }
+    } else {
+      $error = "Vui lòng chọn hình ảnh chính.";
+    }
+
+    // 2) Xử lý ảnh phụ (tối đa 4)
+    $gallery_paths = [];
+    if (!$error && !empty($_FILES['addGalleryFiles']['name'][0])) {
+      $upload_dir = __DIR__ . '/../image/product/gallery/';
+      if (!is_dir($upload_dir)) mkdir($upload_dir, 0777, true);
+
+      foreach ($_FILES['addGalleryFiles']['name'] as $key => $fileName) {
+        if (
+          $_FILES['addGalleryFiles']['error'][$key] === UPLOAD_ERR_OK &&
+          count($gallery_paths) < 4
+        ) {
+
+          if (
+            in_array($_FILES['addGalleryFiles']['type'][$key], $allowed_types) &&
+            $_FILES['addGalleryFiles']['size'][$key] <= $max_size
+          ) {
+
+            $gallery_name = time() . '_' . $key . '_' . basename($fileName);
+            $full_target  = $upload_dir . $gallery_name;
+
+            if (move_uploaded_file($_FILES['addGalleryFiles']['tmp_name'][$key], $full_target)) {
+              $gallery_paths[] = 'image/product/gallery/' . $gallery_name;
+            } else {
+              $error = "Tải lên ảnh phụ {$fileName} thất bại.";
+              break;
+            }
+          } else {
+            $error = "Ảnh phụ {$fileName} không hợp lệ.";
+            break;
+          }
         }
       }
     }
-  }
 
-  if (!$error) {
-    // Thêm sản phẩm vào bảng products
-    $stmt = $conn->prepare("INSERT INTO products (name, price, main_img, rating, rating_count) VALUES (?, ?, ?, ?, ?)");
-    $stmt->bind_param("sdsii", $name, $price, $image_path, $rating, $rating_count);
-    if ($stmt->execute()) {
-      $product_id = $conn->insert_id;
+    // 3) Lưu vào DB nếu không có lỗi
+    if (!$error) {
+      $stmt = $conn->prepare("
+                INSERT INTO products
+                    (name, type, price, main_img, brand, rating, rating_count)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ");
+      $stmt->bind_param("ssdssii", $name, $type, $price, $image_path, $brand, $rating, $rating_count);
+      if ($stmt->execute()) {
+        $product_id = $conn->insert_id;
 
-      // Thêm mô tả vào bảng product_description
-      if ($description) {
-        $stmt = $conn->prepare("INSERT INTO product_description (product_id, description) VALUES (?, ?)");
-        $stmt->bind_param("is", $product_id, $description);
-        $stmt->execute();
-      }
-
-      // Thêm ảnh phụ vào bảng product_gallery
-      if (!empty($gallery_paths)) {
-        $stmt = $conn->prepare("INSERT INTO product_gallery (product_id, image_path) VALUES (?, ?)");
-        foreach ($gallery_paths as $path) {
-          $stmt->bind_param("is", $product_id, $path);
+        // mô tả
+        if ($descriptions !== '') {
+          $stmt = $conn->prepare("
+                        INSERT INTO product_description (product_id, description)
+                        VALUES (?, ?)
+                    ");
+          $stmt->bind_param("is", $product_id, $descriptions);
           $stmt->execute();
         }
-      }
 
-      header('Location: products_ad.php');
-      exit();
-    } else {
-      $error = "Thêm sản phẩm thất bại.";
+        // gallery
+        if ($gallery_paths) {
+          $stmt = $conn->prepare("
+                        INSERT INTO product_gallery (product_id, image_path)
+                        VALUES (?, ?)
+                    ");
+          foreach ($gallery_paths as $path) {
+            $stmt->bind_param("is", $product_id, $path);
+            $stmt->execute();
+          }
+        }
+
+        header('Location: products_ad.php?success=1');
+        exit();
+      } else {
+        $error = "Thêm sản phẩm thất bại: " . $conn->error;
+      }
     }
   }
 }
+
 
 // Xử lý chỉnh sửa sản phẩm
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_product'])) {
-  $id = $_POST['editId'];
-  $name = $_POST['editName'];
-  $price = $_POST['editPrice'];
-  $rating = $_POST['editRating'];
-  $rating_count = $_POST['editReviewCount'];
-  $description = $_POST['editSpecs'];
+  $id           = intval($_POST['editId'] ?? 0);
+  $name         = trim($_POST['editName'] ?? '');
+  $type         = trim($_POST['editType'] ?? '');
+  $price        = floatval($_POST['editPrice'] ?? 0);
+  $rating       = intval($_POST['editRating'] ?? 0);
+  $rating_count = intval($_POST['editReviewCount'] ?? 0);
+  $brand        = trim($_POST['editBrand'] ?? '');
+  $descriptions = trim($_POST['editSpecs'] ?? '');
+  $existingImg  = trim($_POST['existingImage'] ?? '');
 
-  // Xử lý ảnh chính
-  $image_path = $_POST['existingImage'];
-  if (isset($_FILES['editImageFile']) && $_FILES['editImageFile']['error'] === UPLOAD_ERR_OK) {
-    $upload_dir = '../image/product/';
-    $image_name = time() . '_' . basename($_FILES['editImageFile']['name']);
-    $image_path = $upload_dir . $image_name;
-    if (move_uploaded_file($_FILES['editImageFile']['tmp_name'], $image_path)) {
-      $image_path = 'image/product/' . $image_name;
-      // Xóa ảnh chính cũ nếu tồn tại
-      if (file_exists('../' . $_POST['existingImage'])) {
-        unlink('../' . $_POST['existingImage']);
-      }
-    } else {
-      $error = "Tải lên hình ảnh chính thất bại.";
-    }
-  }
+  // Validate
+  if (
+    $id <= 0 || empty($name) || empty($type) || $price < 0 ||
+    $rating < 1 || $rating > 5 || $rating_count < 0
+  ) {
+    $error = "Dữ liệu đầu vào không hợp lệ.";
+  } else {
+    // 1) Ảnh chính
+    $allowed_types = ['image/jpeg', 'image/png', 'image/gif'];
+    $max_size      = 5 * 1024 * 1024;
+    $image_path    = $existingImg;
 
-  // Xử lý ảnh phụ
-  $gallery_paths = [];
-  if (isset($_FILES['editGalleryFiles']) && !$error) {
-    $upload_dir = '../image/product/gallery/';
-    if (!is_dir($upload_dir)) {
-      mkdir($upload_dir, 0777, true);
-    }
-    foreach ($_FILES['editGalleryFiles']['name'] as $key => $name) {
-      if ($_FILES['editGalleryFiles']['error'][$key] === UPLOAD_ERR_OK) {
-        $gallery_name = time() . '_' . $key . '_' . basename($name);
-        $gallery_path = $upload_dir . $gallery_name;
-        if (move_uploaded_file($_FILES['editGalleryFiles']['tmp_name'][$key], $gallery_path)) {
-          $gallery_paths[] = 'image/product/gallery/' . $gallery_name;
+    if (!empty($_FILES['editImageFile']['tmp_name'])) {
+      if (
+        in_array($_FILES['editImageFile']['type'], $allowed_types) &&
+        $_FILES['editImageFile']['size'] <= $max_size
+      ) {
+
+        $upload_dir  = __DIR__ . '/../image/product/';
+        if (!is_dir($upload_dir)) mkdir($upload_dir, 0777, true);
+        $image_name  = time() . '_' . basename($_FILES['editImageFile']['name']);
+        $full_target = $upload_dir . $image_name;
+
+        if (move_uploaded_file($_FILES['editImageFile']['tmp_name'], $full_target)) {
+          // xóa file cũ
+          @unlink(__DIR__ . '/../' . $existingImg);
+          $image_path = 'image/product/' . $image_name;
         } else {
-          $error = "Tải lên ảnh phụ $name thất bại.";
-          break;
+          $error = "Tải lên hình ảnh chính thất bại.";
+        }
+      } else {
+        $error = "Hình ảnh chính không hợp lệ.";
+      }
+    }
+
+    // 2) Ảnh phụ (xóa cũ rồi thêm mới)
+    $gallery_paths = [];
+    if (!$error && !empty($_FILES['editGalleryFiles']['name'][0])) {
+      $upload_dir = __DIR__ . '/../image/product/gallery/';
+      if (!is_dir($upload_dir)) mkdir($upload_dir, 0777, true);
+
+      // xóa gallery cũ
+      $stmt = $conn->prepare("
+                SELECT image_path 
+                FROM product_gallery 
+                WHERE product_id = ?
+            ");
+      $stmt->bind_param("i", $id);
+      $stmt->execute();
+      foreach ($stmt->get_result()->fetch_all(MYSQLI_ASSOC) as $row) {
+        @unlink(__DIR__ . '/../' . $row['image_path']);
+      }
+      $conn->query("DELETE FROM product_gallery WHERE product_id = $id");
+
+      // upload mới
+      foreach ($_FILES['editGalleryFiles']['name'] as $key => $fileName) {
+        if (
+          $_FILES['editGalleryFiles']['error'][$key] === UPLOAD_ERR_OK &&
+          count($gallery_paths) < 4
+        ) {
+
+          if (
+            in_array($_FILES['editGalleryFiles']['type'][$key], $allowed_types) &&
+            $_FILES['editGalleryFiles']['size'][$key] <= $max_size
+          ) {
+
+            $gallery_name = time() . '_' . $key . '_' . basename($fileName);
+            $full_target  = $upload_dir . $gallery_name;
+
+            if (move_uploaded_file($_FILES['editGalleryFiles']['tmp_name'][$key], $full_target)) {
+              $gallery_paths[] = 'image/product/gallery/' . $gallery_name;
+            } else {
+              $error = "Tải lên ảnh phụ {$fileName} thất bại.";
+              break;
+            }
+          } else {
+            $error = "Ảnh phụ {$fileName} không hợp lệ.";
+            break;
+          }
         }
       }
     }
-  }
 
-  if (!$error) {
-    // Cập nhật sản phẩm
-    $stmt = $conn->prepare("UPDATE products SET name = ?, price = ?, main_img = ?, rating = ?, rating_count = ? WHERE id = ?");
-    $stmt->bind_param("sdsiii", $name, $price, $image_path, $rating, $rating_count, $id);
-    if ($stmt->execute()) {
-      // Xóa mô tả cũ
-      $stmt = $conn->prepare("DELETE FROM product_description WHERE product_id = ?");
-      $stmt->bind_param("i", $id);
-      $stmt->execute();
-
-      // Thêm mô tả mới
-      if ($description) {
-        $stmt = $conn->prepare("INSERT INTO product_description (product_id, description) VALUES (?, ?)");
-        $stmt->bind_param("is", $id, $description);
-        $stmt->execute();
-      }
-
-      // Xóa ảnh phụ cũ
-      $stmt = $conn->prepare("SELECT image_path FROM product_gallery WHERE product_id = ?");
-      $stmt->bind_param("i", $id);
-      $stmt->execute();
-      $old_images = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-      foreach ($old_images as $img) {
-        if (file_exists('../' . $img['image_path'])) {
-          unlink('../' . $img['image_path']);
-        }
-      }
-      $stmt = $conn->prepare("DELETE FROM product_gallery WHERE product_id = ?");
-      $stmt->bind_param("i", $id);
-      $stmt->execute();
-
-      // Thêm ảnh phụ mới
-      if (!empty($gallery_paths)) {
-        $stmt = $conn->prepare("INSERT INTO product_gallery (product_id, image_path) VALUES (?, ?)");
-        foreach ($gallery_paths as $path) {
-          $stmt->bind_param("is", $id, $path);
+    // 3) Cập nhật DB
+    if (!$error) {
+      $stmt = $conn->prepare("
+                UPDATE products 
+                SET name=?, type=?, price=?, main_img=?, brand=?, rating=?, rating_count=?
+                WHERE id=?
+            ");
+      $stmt->bind_param(
+        "ssdssiii",
+        $name,
+        $type,
+        $price,
+        $image_path,
+        $brand,
+        $rating,
+        $rating_count,
+        $id
+      );
+      if ($stmt->execute()) {
+        // cập nhật mô tả
+        $conn->query("DELETE FROM product_description WHERE product_id = $id");
+        if ($descriptions !== '') {
+          $stmt = $conn->prepare("
+                        INSERT INTO product_description (product_id, description)
+                        VALUES (?, ?)
+                    ");
+          $stmt->bind_param("is", $id, $descriptions);
           $stmt->execute();
         }
+        // cập nhật gallery
+        if ($gallery_paths) {
+          $stmt = $conn->prepare("
+                        INSERT INTO product_gallery (product_id, image_path)
+                        VALUES (?, ?)
+                    ");
+          foreach ($gallery_paths as $path) {
+            $stmt->bind_param("is", $id, $path);
+            $stmt->execute();
+          }
+        }
+        header('Location: products_ad.php?updated=1');
+        exit();
+      } else {
+        $error = "Chỉnh sửa thất bại: " . $conn->error;
       }
-
-      header('Location: products_ad.php');
-      exit();
-    } else {
-      $error = "Chỉnh sửa sản phẩm thất bại.";
     }
   }
 }
 
-// Xử lý xóa sản phẩm
+// --- XỬ LÝ XÓA SẢN PHẨM ---
 if (isset($_GET['delete_id'])) {
-  $id = $_GET['delete_id'];
+  $id = intval($_GET['delete_id']);
+  // xóa ảnh chính
   $stmt = $conn->prepare("SELECT main_img FROM products WHERE id = ?");
-  $stmt->bind_param("i", $id);
+  $stmt->bind_param('i', $id);
   $stmt->execute();
-  $image = $stmt->get_result()->fetch_assoc()['main_img'];
-  if ($image && file_exists('../' . $image)) {
-    unlink('../' . $image);
-  }
+  $img = $stmt->get_result()->fetch_assoc()['main_img'];
+  @unlink(__DIR__ . '/../' . $img);
 
-  // Xóa ảnh phụ
+  // xóa gallery
   $stmt = $conn->prepare("SELECT image_path FROM product_gallery WHERE product_id = ?");
-  $stmt->bind_param("i", $id);
+  $stmt->bind_param('i', $id);
   $stmt->execute();
-  $gallery_images = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-  foreach ($gallery_images as $img) {
-    if (file_exists('../' . $img['image_path'])) {
-      unlink('../' . $img['image_path']);
-    }
+  foreach ($stmt->get_result()->fetch_all(MYSQLI_ASSOC) as $row) {
+    @unlink(__DIR__ . '/../' . $row['image_path']);
   }
+  $conn->query("DELETE FROM product_gallery WHERE product_id = $id");
 
-  $stmt = $conn->prepare("DELETE FROM product_description WHERE product_id = ?");
-  $stmt->bind_param("i", $id);
-  $stmt->execute();
-  $stmt = $conn->prepare("DELETE FROM product_gallery WHERE product_id = ?");
-  $stmt->bind_param("i", $id);
-  $stmt->execute();
-  $stmt = $conn->prepare("DELETE FROM products WHERE id = ?");
-  $stmt->bind_param("i", $id);
-  if ($stmt->execute()) {
-    header('Location: products_ad.php');
-    exit();
-  } else {
-    $error = "Xóa sản phẩm thất bại.";
-  }
+  // xóa mô tả và bản ghi
+  $conn->query("DELETE FROM product_description WHERE product_id = $id");
+  $conn->query("DELETE FROM products WHERE id = $id");
+
+  header('Location: products_ad.php?deleted=1');
+  exit();
 }
 ?>
 
@@ -258,7 +361,6 @@ if (isset($_GET['delete_id'])) {
   <title>Danh sách sản phẩm</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet" />
-  <link rel="stylesheet" href="../css/style.css" />
 </head>
 
 <body>
@@ -294,6 +396,15 @@ if (isset($_GET['delete_id'])) {
       <?php if ($error): ?>
         <div class="alert alert-danger"><?php echo htmlspecialchars($error); ?></div>
       <?php endif; ?>
+      <?php if (isset($_GET['success'])): ?>
+        <div class="alert alert-success">Thêm sản phẩm thành công.</div>
+      <?php endif; ?>
+      <?php if (isset($_GET['updated'])): ?>
+        <div class="alert alert-success">Chỉnh sửa sản phẩm thành công.</div>
+      <?php endif; ?>
+      <?php if (isset($_GET['deleted'])): ?>
+        <div class="alert alert-success">Xóa sản phẩm thành công.</div>
+      <?php endif; ?>
 
       <div class="table-responsive">
         <table class="table table-dark table-bordered align-middle text-center">
@@ -302,6 +413,8 @@ if (isset($_GET['delete_id'])) {
               <th>Stt</th>
               <th>Mã</th>
               <th>Tên</th>
+              <th>Loại</th>
+              <th>Thương hiệu</th>
               <th>Giá</th>
               <th>Đánh giá</th>
               <th>Hình ảnh</th>
@@ -322,6 +435,8 @@ if (isset($_GET['delete_id'])) {
                 <td><?php echo $index + 1; ?></td>
                 <td><?php echo $product['id']; ?></td>
                 <td><?php echo htmlspecialchars($product['name']); ?></td>
+                <td><?php echo htmlspecialchars($product['type'] ?? 'Không có'); ?></td>
+                <td><?php echo htmlspecialchars($product['brand'] ?? 'Không có'); ?></td>
                 <td><?php echo number_format($product['price']); ?>đ</td>
                 <td><?php echo $product['rating'] . ' (' . $product['rating_count'] . ')'; ?></td>
                 <td>
@@ -329,7 +444,7 @@ if (isset($_GET['delete_id'])) {
                 </td>
                 <td><?php echo htmlspecialchars($product['descriptions'] ?? 'Không có'); ?></td>
                 <td>
-                  <button class="btn btn-primary btn-sm" onclick="openEditModal(<?php echo $product['id']; ?>, '<?php echo htmlspecialchars($product['name'], ENT_QUOTES); ?>', '<?php echo $product['price']; ?>', '<?php echo $product['rating']; ?>', '<?php echo $product['rating_count']; ?>', '<?php echo htmlspecialchars($product['main_img'], ENT_QUOTES); ?>', '<?php echo htmlspecialchars($product['descriptions'] ?? '', ENT_QUOTES); ?>', '<?php echo htmlspecialchars(json_encode(array_column($gallery_images, 'image_path')), ENT_QUOTES); ?>')">Sửa</button>
+                  <button class="btn btn-primary btn-sm" onclick="openEditModal(<?php echo $product['id']; ?>, '<?php echo htmlspecialchars($product['name'], ENT_QUOTES); ?>', '<?php echo htmlspecialchars($product['type'], ENT_QUOTES); ?>', '<?php echo $product['price']; ?>', '<?php echo $product['rating']; ?>', '<?php echo $product['rating_count']; ?>', '<?php echo htmlspecialchars($product['brand'], ENT_QUOTES); ?>', '<?php echo htmlspecialchars($product['main_img'], ENT_QUOTES); ?>', '<?php echo htmlspecialchars($product['descriptions'] ?? '', ENT_QUOTES); ?>', '<?php echo htmlspecialchars(json_encode(array_column($gallery_images, 'image_path')), ENT_QUOTES); ?>')">Sửa</button>
                   <a href="products_ad.php?delete_id=<?php echo $product['id']; ?>" class="btn btn-danger btn-sm" onclick="return confirm('Bạn có chắc muốn xóa?')">Xóa</a>
                 </td>
               </tr>
@@ -349,6 +464,78 @@ if (isset($_GET['delete_id'])) {
         </button>
       </form>
     </main>
+  </div>
+
+  <!-- Modal thêm sản phẩm -->
+  <div class="modal fade" id="addProductModal" tabindex="-1" aria-labelledby="addProductModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content bg-dark text-white">
+        <div class="modal-header">
+          <h5 class="modal-title" id="addProductModalLabel">Thêm sản phẩm mới</h5>
+          <button type="button" class="btn-close bg-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <form id="addProductForm" enctype="multipart/form-data" method="POST">
+            <div class="row mb-3">
+              <div class="col">
+                <label class="form-label">Mã sản phẩm:</label>
+                <input type="text" class="form-control" id="addCode" name="addCode" readonly value="Tự động" />
+              </div>
+              <div class="col">
+                <label class="form-label">Tên sản phẩm:</label>
+                <input type="text" class="form-control" id="addName" name="addName" required />
+              </div>
+            </div>
+            <div class="row mb-3">
+              <div class="col">
+                <label class="form-label">Loại sản phẩm (type):</label>
+                <input type="text" class="form-control" id="addType" name="addType" required placeholder="Ví dụ: Camera, Điện thoại" />
+              </div>
+              <div class="col">
+                <label class="form-label">Thương hiệu:</label>
+                <input type="text" class="form-control" id="addBrand" name="addBrand" placeholder="Ví dụ: Samsung, ASUS" />
+              </div>
+            </div>
+            <div class="row mb-3">
+              <div class="col">
+                <label class="form-label">Giá tiền:</label>
+                <input type="number" class="form-control" id="addPrice" name="addPrice" step="0.01" min="0" required />
+              </div>
+              <div class="col">
+                <label class="form-label">Số sao (1–5):</label>
+                <input type="number" min="1" max="5" class="form-control" id="addRating" name="addRating" required />
+              </div>
+            </div>
+            <div class="row mb-3">
+              <div class="col">
+                <label class="form-label">Số lượt đánh giá:</label>
+                <input type="number" min="0" class="form-control" id="addReviewCount" name="addReviewCount" required />
+              </div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Hình ảnh chính:</label>
+              <input type="file" class="form-control" id="addImageFile" name="addImageFile" accept="image/jpeg,image/png,image/gif" required />
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Ảnh phụ (tối đa 4 ảnh):</label>
+              <input type="file" class="form-control mb-2" name="addGalleryFiles[]" accept="image/jpeg,image/png,image/gif" />
+              <input type="file" class="form-control mb-2" name="addGalleryFiles[]" accept="image/jpeg,image/png,image/gif" />
+              <input type="file" class="form-control mb-2" name="addGalleryFiles[]" accept="image/jpeg,image/png,image/gif" />
+              <input type="file" class="form-control mb-2" name="addGalleryFiles[]" accept="image/jpeg,image/png,image/gif" />
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Thông số kỹ thuật:</label>
+              <input type="text" class="form-control" id="addSpecs" name="addSpecs" placeholder="Ví dụ: Độ phân giải: 5 MP; Góc nhìn: 360 độ;" />
+            </div>
+            <input type="hidden" name="add_product" value="1" />
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+          <button class="btn btn-success" type="submit" form="addProductForm">Thêm sản phẩm</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Modal chỉnh sửa sản phẩm -->
@@ -375,33 +562,45 @@ if (isset($_GET['delete_id'])) {
             </div>
             <div class="row mb-3">
               <div class="col">
+                <label class="form-label">Loại sản phẩm (type):</label>
+                <input type="text" class="form-control" id="editType" name="editType" required placeholder="Ví dụ: Camera, Điện thoại" />
+              </div>
+              <div class="col">
+                <label class="form-label">Thương hiệu:</label>
+                <input type="text" class="form-control" id="editBrand" name="editBrand" placeholder="Ví dụ: Samsung, ASUS" />
+              </div>
+            </div>
+            <div class="row mb-3">
+              <div class="col">
                 <label class="form-label">Giá tiền:</label>
-                <input type="number" class="form-control" id="editPrice" name="editPrice" step="0.01" required />
+                <input type="number" class="form-control" id="editPrice" name="editPrice" step="0.01" min="0" required />
               </div>
               <div class="col">
                 <label class="form-label">Số sao (1–5):</label>
                 <input type="number" min="1" max="5" class="form-control" id="editRating" name="editRating" required />
               </div>
             </div>
-            <div class="mb-3">
-              <label class="form-label">Số lượt đánh giá:</label>
-              <input type="number" min="0" class="form-control" id="editReviewCount" name="editReviewCount" required />
+            <div class="row mb-3">
+              <div class="col">
+                <label class="form-label">Số lượt đánh giá:</label>
+                <input type="number" min="0" class="form-control" id="editReviewCount" name="editReviewCount" required />
+              </div>
             </div>
             <div class="mb-3">
               <label class="form-label">Hình ảnh chính:</label>
-              <input type="file" class="form-control" id="editImageFile" name="editImageFile" />
+              <input type="file" class="form-control" id="editImageFile" name="editImageFile" accept="image/jpeg,image/png,image/gif" />
               <img id="editImagePreview" src="" alt="Preview" class="mt-2" style="max-width: 100px; display: none;" />
             </div>
             <div class="mb-3">
               <label class="form-label">Ảnh phụ (tối đa 4 ảnh):</label>
-              <input type="file" class="form-control mb-2" name="editGalleryFiles[]" accept="image/*" />
-              <input type="file" class="form-control mb-2" name="editGalleryFiles[]" accept="image/*" />
-              <input type="file" class="form-control mb-2" name="editGalleryFiles[]" accept="image/*" />
-              <input type="file" class="form-control mb-2" name="editGalleryFiles[]" accept="image/*" />
+              <input type="file" class="form-control mb-2" name="editGalleryFiles[]" accept="image/jpeg,image/png,image/gif" />
+              <input type="file" class="form-control mb-2" name="editGalleryFiles[]" accept="image/jpeg,image/png,image/gif" />
+              <input type="file" class="form-control mb-2" name="editGalleryFiles[]" accept="image/jpeg,image/png,image/gif" />
+              <input type="file" class="form-control mb-2" name="editGalleryFiles[]" accept="image/jpeg,image/png,image/gif" />
             </div>
             <div class="mb-3">
               <label class="form-label">Thông số kỹ thuật:</label>
-              <textarea class="form-control" id="editSpecs" name="editSpecs" rows="3"></textarea>
+              <input type="text" class="form-control" id="editSpecs" name="editSpecs" placeholder="Ví dụ: Độ phân giải: 5 MP; Góc nhìn: 360 độ;" />
             </div>
             <input type="hidden" name="edit_product" value="1" />
           </form>
@@ -414,80 +613,23 @@ if (isset($_GET['delete_id'])) {
     </div>
   </div>
 
-  <!-- Modal thêm sản phẩm -->
-  <div class="modal fade" id="addProductModal" tabindex="-1" aria-labelledby="addProductModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
-      <div class="modal-content bg-dark text-white">
-        <div class="modal-header">
-          <h5 class="modal-title" id="addProductModalLabel">Thêm sản phẩm mới</h5>
-          <button type="button" class="btn-close bg-white" data-bs-dismiss="modal" aria-label="Close"></button>
-        </div>
-        <div class="modal-body">
-          <form id="addProductForm" enctype="multipart/form-data" method="POST">
-            <div class="row mb-3">
-              <div class="col">
-                <label class="form-label">Mã sản phẩm:</label>
-                <input type="text" class="form-control" id="addCode" name="addCode" readonly value="Tự động" />
-              </div>
-              <div class="col">
-                <label class="form-label">Tên sản phẩm:</label>
-                <input type="text" class="form-control" id="addName" name="addName" required />
-              </div>
-            </div>
-            <div class="row mb-3">
-              <div class="col">
-                <label class="form-label">Giá tiền:</label>
-                <input type="number" class="form-control" id="addPrice" name="addPrice" step="0.01" required />
-              </div>
-              <div class="col">
-                <label class="form-label">Số sao (1–5):</label>
-                <input type="number" min="1" max="5" class="form-control" id="addRating" name="addRating" required />
-              </div>
-            </div>
-            <div class="mb-3">
-              <label class="form-label">Số lượt đánh giá:</label>
-              <input type="number" min="0" class="form-control" id="addReviewCount" name="addReviewCount" required />
-            </div>
-            <div class="mb-3">
-              <label class="form-label">Hình ảnh chính:</label>
-              <input type="file" class="form-control" id="addImageFile" name="addImageFile" required />
-            </div>
-            <div class="mb-3">
-              <label class="form-label">Ảnh phụ (tối đa 4 ảnh):</label>
-              <input type="file" class="form-control mb-2" name="addGalleryFiles[]" accept="image/*" />
-              <input type="file" class="form-control mb-2" name="addGalleryFiles[]" accept="image/*" />
-              <input type="file" class="form-control mb-2" name="addGalleryFiles[]" accept="image/*" />
-              <input type="file" class="form-control mb-2" name="addGalleryFiles[]" accept="image/*" />
-            </div>
-            <div class="mb-3">
-              <label class="form-label">Thông số kỹ thuật:</label>
-              <textarea class="form-control" id="addSpecs" name="addSpecs" rows="3"></textarea>
-            </div>
-            <input type="hidden" name="add_product" value="1" />
-          </form>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
-          <button class="btn btn-success" type="submit" form="addProductForm">Thêm sản phẩm</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   <script>
-    function openEditModal(id, name, price, rating, rating_count, image, specs, gallery) {
-      // Xóa ảnh phụ hiện tại trong modal để tránh trùng lặp
+    function openEditModal(id, name, type, price, rating, rating_count, brand, image, specs, gallery) {
+      document.getElementById('editProductForm').reset();
       document.querySelectorAll('#editProductModal img.mt-2:not(#editImagePreview)').forEach(img => img.remove());
 
       document.getElementById('editId').value = id;
       document.getElementById('editCode').value = id;
       document.getElementById('editName').value = name;
+      document.getElementById('editType').value = type;
       document.getElementById('editPrice').value = price;
       document.getElementById('editRating').value = rating;
       document.getElementById('editReviewCount').value = rating_count;
-      document.getElementById('editSpecs').value = specs;
+      document.getElementById('editBrand').value = brand;
       document.getElementById('existingImage').value = image;
+      document.getElementById('editSpecs').value = specs;
+
       const preview = document.getElementById('editImagePreview');
       if (image) {
         preview.src = '../' + image;
@@ -495,18 +637,7 @@ if (isset($_GET['delete_id'])) {
       } else {
         preview.style.display = 'none';
       }
-      // Hiển thị ảnh phụ
-      const galleryImages = JSON.parse(gallery);
-      const galleryInputs = document.querySelectorAll('input[name="editGalleryFiles[]"]');
-      galleryImages.forEach((img, index) => {
-        if (index < galleryInputs.length) {
-          const previewImg = document.createElement('img');
-          previewImg.src = '../' + img;
-          previewImg.style.maxWidth = '100px';
-          previewImg.className = 'mt-2';
-          galleryInputs[index].insertAdjacentElement('afterend', previewImg);
-        }
-      });
+
       const modal = new bootstrap.Modal(document.getElementById('editProductModal'));
       modal.show();
     }

@@ -543,7 +543,7 @@ if (isset($_SESSION['user'])) {
       </div>
     </div>
   </footer>
-
+  <script src="js/index.js"></script>
 </body>
 
 </html>
